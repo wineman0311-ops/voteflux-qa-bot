@@ -10,7 +10,7 @@ from typing import List, Dict, Any
 
 # Telegram Configuration
 TG_BOT_TOKEN: str = os.environ.get("TG_BOT_TOKEN", "")
-TG_CHAT_ID: str = os.environ.get("TG_CHAT_ID", "")
+# TG_CHAT_ID removed — using subscriber-based broadcast instead
 
 # Cron Schedule Configuration
 CRON_SCHEDULE: str = os.environ.get("CRON_SCHEDULE", "0 9 * * *")
@@ -24,6 +24,9 @@ REPORTS_DIR: str = os.environ.get("REPORTS_DIR", "./reports")
 
 # Platform Store Path
 PLATFORM_STORE_PATH: str = os.environ.get("PLATFORM_STORE_PATH", "./platforms.json")
+
+# Subscriber Store Path
+SUBSCRIBER_STORE_PATH: str = os.environ.get("SUBSCRIBER_STORE_PATH", "./subscribers.json")
 
 # Countries Configuration (static — less likely to change)
 COUNTRIES: List[Dict[str, Any]] = [

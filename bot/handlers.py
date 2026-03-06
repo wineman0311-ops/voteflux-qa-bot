@@ -3,6 +3,8 @@ Command handlers for Telegram bot.
 
 Implements all command handlers using python-telegram-bot v20 async API.
 All user-facing messages are in Traditional Chinese (繁體中文).
+
+Subscription model: users subscribe/unsubscribe to receive broadcast reports.
 """
 
 import asyncio
@@ -13,12 +15,12 @@ from typing import Optional
 from telegram import Update, Document
 from telegram.ext import ContextTypes, CallbackContext
 
-from config.settings import TG_CHAT_ID
 from analyzers.orchestrator import AnalysisOrchestrator
 from report.generator import ReportGenerator
 from storage.report_store import ReportStore
 from storage.schedule_store import ScheduleStore
 from storage.platform_store import PlatformStore
+from storage.subscriber_store import SubscriberStore
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,11 @@ def get_schedule_store(context: ContextTypes.DEFAULT_TYPE) -> ScheduleStore:
 def get_platform_store(context: ContextTypes.DEFAULT_TYPE) -> PlatformStore:
     """Get PlatformStore instance from bot_data."""
     return context.bot_data.get("platform_store")
+
+
+def get_subscriber_store(context: ContextTypes.DEFAULT_TYPE) -> SubscriberStore:
+    """Get SubscriberStore instance from bot_data."""
+    return context.bot_data.get("subscriber_store")
 
 
 def is_analysis_running(context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -124,6 +131,156 @@ def run_analysis_sync(version: str = "") -> tuple:
         return None, None, str(e)
 
 
+async def broadcast_report(
+    context: ContextTypes.DEFAULT_TYPE,
+    report_path: str,
+    summary_text: str,
+    version: str,
+) -> int:
+    """
+    Broadcast report to all subscribers.
+
+    Args:
+        context: Bot context
+        report_path: Path to HTML report file
+        summary_text: Summary message text
+        version: Report version string
+
+    Returns:
+        Number of subscribers successfully notified
+    """
+    subscriber_store = get_subscriber_store(context)
+    if not subscriber_store:
+        logger.warning("No subscriber store available for broadcast")
+        return 0
+
+    chat_ids = subscriber_store.get_all_chat_ids()
+    if not chat_ids:
+        logger.info("No subscribers to broadcast to")
+        return 0
+
+    success_count = 0
+    failed_ids = []
+
+    for chat_id in chat_ids:
+        try:
+            # Send summary text
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"📊 VoteFlux QA 分析報告\n\n{summary_text}",
+            )
+            # Send report as document
+            if report_path:
+                with open(report_path, "rb") as report_file:
+                    await context.bot.send_document(
+                        chat_id=chat_id,
+                        document=report_file,
+                        caption=f"VoteFlux QA 報告 - {version}",
+                        filename=f"VoteFlux_Analysis_Report_{version}.html",
+                    )
+            success_count += 1
+        except Exception as e:
+            logger.error(f"Failed to send report to {chat_id}: {e}")
+            failed_ids.append(chat_id)
+
+    logger.info(
+        f"Broadcast complete: {success_count}/{len(chat_ids)} subscribers notified"
+    )
+    if failed_ids:
+        logger.warning(f"Failed to notify: {failed_ids}")
+
+    return success_count
+
+
+# ============================================================================
+# Subscription Handlers
+# ============================================================================
+
+
+async def subscribe_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """
+    Handle /subscribe command.
+
+    Subscribes the current chat to receive broadcast reports.
+    """
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    logger.info(f"User {user.id} requesting /subscribe")
+
+    subscriber_store = get_subscriber_store(context)
+    if not subscriber_store:
+        await update.message.reply_text("❌ 訂閱系統未初始化")
+        return
+
+    success, message = subscriber_store.subscribe(
+        chat_id=chat_id,
+        username=user.username or "",
+        first_name=user.first_name or "",
+    )
+    total = subscriber_store.count()
+
+    await update.message.reply_text(
+        f"{message}\n\n目前共 {total} 位訂閱者"
+    )
+
+
+async def unsubscribe_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """
+    Handle /unsubscribe command.
+
+    Unsubscribes the current chat from broadcast reports.
+    """
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    logger.info(f"User {user.id} requesting /unsubscribe")
+
+    subscriber_store = get_subscriber_store(context)
+    if not subscriber_store:
+        await update.message.reply_text("❌ 訂閱系統未初始化")
+        return
+
+    success, message = subscriber_store.unsubscribe(chat_id=chat_id)
+    await update.message.reply_text(message)
+
+
+async def mystatus_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """
+    Handle /mystatus command.
+
+    Shows current subscription status for the user.
+    """
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    logger.info(f"User {user.id} checking /mystatus")
+
+    subscriber_store = get_subscriber_store(context)
+    if not subscriber_store:
+        await update.message.reply_text("❌ 訂閱系統未初始化")
+        return
+
+    if subscriber_store.is_subscribed(chat_id):
+        info = subscriber_store.get_subscriber(chat_id)
+        subscribed_at = info.get("subscribed_at", "未知")[:10]
+        total = subscriber_store.count()
+        await update.message.reply_text(
+            f"✅ 你已訂閱 VoteFlux QA 報告\n\n"
+            f"訂閱日期: {subscribed_at}\n"
+            f"目前訂閱者: {total} 位\n\n"
+            f"使用 /unsubscribe 取消訂閱"
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ 你尚未訂閱\n\n"
+            f"使用 /subscribe 開始訂閱，即可自動收到分析報告"
+        )
+
+
 # ============================================================================
 # Command Handlers
 # ============================================================================
@@ -139,17 +296,23 @@ async def start_handler(
     """
     welcome_message = (
         "歡迎使用 VoteFlux QA 自動化機器人 🤖\n\n"
-        "可用命令:\n"
-        "📋 /run - 執行分析\n"
-        "📊 /status - 查看狀態\n"
-        "⏱️ /schedule - 管理排程\n"
-        "📜 /history - 查看報告歷史\n"
-        "📄 /report - 取得特定報告\n"
-        "🌐 /platforms - 查看平台清單\n"
-        "➕ /add_platform - 新增平台\n"
-        "➖ /remove_platform - 移除平台\n"
-        "❓ /help - 顯示幫助\n\n"
-        "輸入 /help 了解更多詳情"
+        "📬 訂閱功能\n"
+        "/subscribe - 訂閱分析報告\n"
+        "/unsubscribe - 取消訂閱\n"
+        "/mystatus - 查看訂閱狀態\n\n"
+        "🔧 執行功能\n"
+        "/run - 立即執行分析\n"
+        "/status - 查看機器人狀態\n"
+        "/history - 查看報告歷史\n"
+        "/report - 取得特定報告\n\n"
+        "⏱️ 排程管理\n"
+        "/schedule - 查看/設定排程\n\n"
+        "🌐 平台管理\n"
+        "/platforms - 查看平台清單\n"
+        "/add_platform - 新增平台\n"
+        "/remove_platform - 移除平台\n\n"
+        "❓ /help - 顯示完整說明\n\n"
+        "👉 先用 /subscribe 訂閱，即可自動收到報告！"
     )
 
     logger.info(f"User {update.effective_user.id} started bot")
@@ -163,7 +326,8 @@ async def run_handler(
     Handle /run command.
 
     Checks if analysis is already running, then runs analysis in background thread.
-    Sends progress updates and final report to user.
+    After completion, broadcasts report to all subscribers.
+    Also sends report directly to the command issuer.
     """
     user_id = update.effective_user.id
     logger.info(f"User {user_id} triggered /run command")
@@ -196,22 +360,20 @@ async def run_handler(
         )
 
         if error_msg:
-            # Analysis failed
-            error_message = (
+            await progress_msg.edit_text(
                 "❌ 分析失敗\n\n"
                 f"錯誤: {error_msg}\n\n"
                 "請檢查日誌並稍後重試"
             )
-            await progress_msg.edit_text(error_message)
             logger.error(f"Analysis failed for user {user_id}: {error_msg}")
             return
 
-        # Update progress message with summary
+        # Update progress message
         await progress_msg.edit_text(
             f"✅ 分析完成！\n\n{summary_text}"
         )
 
-        # Send report as document
+        # Send report to the command issuer
         if report_path:
             with open(report_path, "rb") as report_file:
                 await context.bot.send_document(
@@ -222,17 +384,47 @@ async def run_handler(
                 )
             logger.info(f"Report sent to user {user_id}")
 
+        # Broadcast to all subscribers (excluding current user to avoid duplication)
+        subscriber_store = get_subscriber_store(context)
+        if subscriber_store:
+            chat_ids = [
+                cid for cid in subscriber_store.get_all_chat_ids()
+                if cid != update.effective_chat.id
+            ]
+            broadcast_count = 0
+            for chat_id in chat_ids:
+                try:
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"📊 VoteFlux QA 分析報告\n\n{summary_text}",
+                    )
+                    if report_path:
+                        with open(report_path, "rb") as rf:
+                            await context.bot.send_document(
+                                chat_id=chat_id,
+                                document=rf,
+                                caption=f"VoteFlux QA 報告 - {version}",
+                                filename=f"VoteFlux_Analysis_Report_{version}.html",
+                            )
+                    broadcast_count += 1
+                except Exception as e:
+                    logger.error(f"Broadcast to {chat_id} failed: {e}")
+
+            if broadcast_count > 0:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=f"📤 已廣播給 {broadcast_count} 位訂閱者",
+                )
+
     except Exception as e:
         logger.error(f"Error in /run handler: {str(e)}", exc_info=True)
-        error_msg = (
+        await progress_msg.edit_text(
             "❌ 執行出錯\n\n"
             f"詳情: {str(e)}\n\n"
             "請檢查日誌"
         )
-        await progress_msg.edit_text(error_msg)
 
     finally:
-        # Clear running flag
         set_analysis_running(context, False)
 
 
@@ -242,11 +434,8 @@ async def status_handler(
     """
     Handle /status command.
 
-    Shows current bot status including:
-    - Analysis running status
-    - Last run time
-    - Next scheduled run
-    - Platform and report counts
+    Shows current bot status including analysis status, last run, next schedule,
+    platform count, report count, and subscriber count.
     """
     user_id = update.effective_user.id
     logger.info(f"User {user_id} queried status")
@@ -254,11 +443,10 @@ async def status_handler(
     try:
         report_store = get_report_store(context)
         schedule_store = get_schedule_store(context)
+        subscriber_store = get_subscriber_store(context)
 
-        # Get analysis running status
         running_status = "🔄 進行中" if is_analysis_running(context) else "✅ 待命"
 
-        # Get last report info
         recent_reports = report_store.list_reports(limit=1)
         if recent_reports:
             last_report = recent_reports[0]
@@ -268,20 +456,17 @@ async def status_handler(
         else:
             last_run_text = "⏱️ 最後執行: 尚未執行"
 
-        # Get next scheduled run
         schedule = schedule_store.get_schedule()
         next_runs = await asyncio.to_thread(_get_next_runs, schedule, count=1)
-        if next_runs:
-            next_run_text = (
-                f"📅 下次排程: {next_runs[0].strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-        else:
-            next_run_text = "📅 下次排程: 未設定"
+        next_run_text = (
+            f"📅 下次排程: {next_runs[0].strftime('%Y-%m-%d %H:%M:%S')}"
+            if next_runs else "📅 下次排程: 未設定"
+        )
 
-        # Count stats
         total_reports = len(report_store.list_reports(limit=100))
         platform_store = get_platform_store(context)
         platform_count = platform_store.count() if platform_store else 0
+        subscriber_count = subscriber_store.count() if subscriber_store else 0
 
         status_message = (
             f"🤖 機器人狀態\n\n"
@@ -291,6 +476,7 @@ async def status_handler(
             f"📊 統計\n"
             f"平台數: {platform_count}\n"
             f"報告數: {total_reports}\n"
+            f"訂閱者: {subscriber_count} 位\n"
             f"排程表: {schedule}"
         )
 
@@ -298,9 +484,7 @@ async def status_handler(
 
     except Exception as e:
         logger.error(f"Error in /status handler: {str(e)}", exc_info=True)
-        await update.message.reply_text(
-            f"❌ 查詢失敗\n\n錯誤: {str(e)}"
-        )
+        await update.message.reply_text(f"❌ 查詢失敗\n\n錯誤: {str(e)}")
 
 
 async def schedule_handler(
@@ -320,15 +504,12 @@ async def schedule_handler(
         current_schedule = schedule_store.get_schedule()
 
         if not context.args:
-            # Show current schedule
             next_runs = await asyncio.to_thread(
                 _get_next_runs, current_schedule, count=3
             )
-
             next_runs_text = "\n".join(
                 [f"  • {run.strftime('%Y-%m-%d %H:%M:%S')}" for run in next_runs]
             )
-
             message = (
                 f"📅 當前排程\n\n"
                 f"Cron 表達式: `{current_schedule}`\n\n"
@@ -337,19 +518,13 @@ async def schedule_handler(
                 f"使用 `/schedule <cron表達式>` 更新排程\n"
                 f"例: `/schedule 0 9 * * 1-5` (工作日 9:00)"
             )
-
-            await update.message.reply_text(
-                message,
-                parse_mode="Markdown"
-            )
+            await update.message.reply_text(message, parse_mode="Markdown")
 
         else:
-            # Update schedule
             new_cron = " ".join(context.args)
-            logger.info(f"User {user_id} attempting to update schedule to: {new_cron}")
+            logger.info(f"User {user_id} updating schedule to: {new_cron}")
 
             if schedule_store.set_schedule(new_cron):
-                # Validate and get next runs
                 try:
                     next_runs = await asyncio.to_thread(
                         _get_next_runs, new_cron, count=3
@@ -357,44 +532,31 @@ async def schedule_handler(
                     next_runs_text = "\n".join(
                         [f"  • {run.strftime('%Y-%m-%d %H:%M:%S')}" for run in next_runs]
                     )
-
                     message = (
                         f"✅ 排程已更新\n\n"
                         f"新表達式: `{new_cron}`\n\n"
                         f"下次 3 次執行:\n"
                         f"{next_runs_text}"
                     )
-
-                    # Update scheduler in bot_data if available
                     scheduler = context.bot_data.get("scheduler")
                     if scheduler:
                         scheduler.update_schedule(new_cron)
-                        logger.info("Scheduler updated successfully")
-
-                    await update.message.reply_text(
-                        message,
-                        parse_mode="Markdown"
-                    )
-
+                    await update.message.reply_text(message, parse_mode="Markdown")
                 except Exception as e:
-                    logger.error(f"Error getting next runs: {str(e)}")
                     await update.message.reply_text(
                         f"⚠️ 排程已保存，但無法計算下次執行時間\n\n"
                         f"請檢查 Cron 表達式: {new_cron}"
                     )
-
             else:
                 await update.message.reply_text(
                     f"❌ 無效的 Cron 表達式: {new_cron}\n\n"
-                    f"格式應為: `minute hour day month dayofweek`\n"
+                    f"格式應為: `分 時 日 月 周`\n"
                     f"例: `0 9 * * 1-5` (工作日 9:00)"
                 )
 
     except Exception as e:
         logger.error(f"Error in /schedule handler: {str(e)}", exc_info=True)
-        await update.message.reply_text(
-            f"❌ 操作失敗\n\n錯誤: {str(e)}"
-        )
+        await update.message.reply_text(f"❌ 操作失敗\n\n錯誤: {str(e)}")
 
 
 async def history_handler(
@@ -413,13 +575,9 @@ async def history_handler(
         reports = report_store.list_reports(limit=10)
 
         if not reports:
-            await update.message.reply_text(
-                "📜 報告歷史\n\n"
-                "尚無報告"
-            )
+            await update.message.reply_text("📜 報告歷史\n\n尚無報告")
             return
 
-        # Format report list
         report_lines = ["📜 最近報告\n"]
         for i, report in enumerate(reports, 1):
             size_kb = report["size"] / 1024
@@ -438,9 +596,7 @@ async def history_handler(
 
     except Exception as e:
         logger.error(f"Error in /history handler: {str(e)}", exc_info=True)
-        await update.message.reply_text(
-            f"❌ 查詢失敗\n\n錯誤: {str(e)}"
-        )
+        await update.message.reply_text(f"❌ 查詢失敗\n\n錯誤: {str(e)}")
 
 
 async def report_handler(
@@ -466,7 +622,6 @@ async def report_handler(
     try:
         version = context.args[0]
         report_store = get_report_store(context)
-
         report_path = report_store.get_report_path(version)
 
         if not report_path:
@@ -474,10 +629,8 @@ async def report_handler(
                 f"❌ 找不到報告: {version}\n\n"
                 f"使用 `/history` 查看可用版本"
             )
-            logger.warning(f"User {user_id} requested non-existent report: {version}")
             return
 
-        # Send report as document
         with open(report_path, "rb") as report_file:
             await context.bot.send_document(
                 chat_id=update.effective_chat.id,
@@ -485,14 +638,11 @@ async def report_handler(
                 caption=f"VoteFlux QA 報告 - {version}",
                 filename=f"VoteFlux_Analysis_Report_{version}.html",
             )
-
         logger.info(f"Report {version} sent to user {user_id}")
 
     except Exception as e:
         logger.error(f"Error in /report handler: {str(e)}", exc_info=True)
-        await update.message.reply_text(
-            f"❌ 送出報告失敗\n\n錯誤: {str(e)}"
-        )
+        await update.message.reply_text(f"❌ 送出報告失敗\n\n錯誤: {str(e)}")
 
 
 async def help_handler(
@@ -505,39 +655,36 @@ async def help_handler(
     """
     help_message = (
         "📖 VoteFlux QA 機器人命令說明\n\n"
+        "📬 訂閱命令\n"
+        "`/subscribe` - 訂閱分析報告\n"
+        "  加入訂閱，自動收到定期報告\n\n"
+        "`/unsubscribe` - 取消訂閱\n"
+        "  取消後不再收到自動報告\n\n"
+        "`/mystatus` - 查看我的訂閱狀態\n"
+        "  顯示是否已訂閱及訂閱日期\n\n"
         "🔧 執行命令\n"
         "`/run` - 立即執行 QA 分析\n"
-        "  執行分析並生成報告\n\n"
+        "  執行分析並廣播報告給所有訂閱者\n\n"
         "📊 查詢命令\n"
         "`/status` - 查看機器人狀態\n"
-        "  顯示當前狀態、最後執行時間、下次排程\n\n"
+        "  顯示當前狀態、最後執行時間、訂閱人數\n\n"
         "`/history` - 查看報告歷史\n"
         "  列出最近 10 個報告\n\n"
         "`/report <版本>` - 取得特定報告\n"
         "  例: `/report 20260306_001234`\n\n"
         "⏱️ 排程命令\n"
-        "`/schedule` - 查看當前排程\n"
-        "  顯示 Cron 表達式和下次執行時間\n\n"
+        "`/schedule` - 查看當前排程\n\n"
         "`/schedule <表達式>` - 更新排程\n"
-        "  格式: `分 時 日 月 周`\n"
         "  例: `/schedule 0 9 * * 1-5` (工作日 9:00)\n\n"
         "🌐 平台管理\n"
         "`/platforms` - 查看所有分析平台\n\n"
         "`/add_platform <ID> <名稱> <網址> [角色]`\n"
-        "  新增分析平台\n"
-        "  例: `/add_platform betfair Betfair https://betfair.com 英國博彩平台`\n\n"
+        "  例: `/add_platform betfair Betfair https://betfair.com 英國博彩`\n\n"
         "`/remove_platform <ID>` - 移除平台\n"
-        "  例: `/remove_platform betfair`\n\n"
-        "❓ 幫助\n"
-        "`/help` - 顯示此幫助信息\n\n"
-        "`/start` - 顯示歡迎信息\n"
     )
 
     logger.info(f"User {update.effective_user.id} requested help")
-    await update.message.reply_text(
-        help_message,
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text(help_message, parse_mode="Markdown")
 
 
 # ============================================================================
@@ -600,7 +747,6 @@ async def add_platform_handler(
     Handle /add_platform command.
 
     Usage: /add_platform <id> <name> <url> [role]
-    Example: /add_platform betfair Betfair https://betfair.com 英國博彩平台
     """
     logger.info(f"User {update.effective_user.id} adding platform")
 
@@ -654,7 +800,6 @@ async def remove_platform_handler(
     Handle /remove_platform command.
 
     Usage: /remove_platform <id>
-    Example: /remove_platform betfair
     """
     logger.info(f"User {update.effective_user.id} removing platform")
 
@@ -675,9 +820,8 @@ async def remove_platform_handler(
             return
 
         platform_id = context.args[0].lower().strip()
-
-        # Show confirmation info
         platform = platform_store.get_platform(platform_id)
+
         if not platform:
             await update.message.reply_text(
                 f"❌ 找不到平台: `{platform_id}`\n\n"
@@ -691,8 +835,7 @@ async def remove_platform_handler(
         if success:
             total = platform_store.count()
             await update.message.reply_text(
-                f"✅ {message}\n\n"
-                f"目前剩餘 {total} 個平台"
+                f"✅ {message}\n\n目前剩餘 {total} 個平台"
             )
         else:
             await update.message.reply_text(f"❌ {message}")
@@ -708,16 +851,7 @@ async def remove_platform_handler(
 
 
 def _get_next_runs(cron_expr: str, count: int = 3) -> list:
-    """
-    Get next scheduled run times from cron expression.
-
-    Args:
-        cron_expr: Cron expression string
-        count: Number of next runs to return
-
-    Returns:
-        List of datetime objects for next scheduled runs
-    """
+    """Get next scheduled run times from cron expression."""
     try:
         from croniter import croniter
         base = datetime.now()

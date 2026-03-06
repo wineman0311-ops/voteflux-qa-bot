@@ -20,6 +20,9 @@ from bot.handlers import (
     platforms_handler,
     add_platform_handler,
     remove_platform_handler,
+    subscribe_handler,
+    unsubscribe_handler,
+    mystatus_handler,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,6 +52,11 @@ def create_bot(token: str) -> Application:
     # Register command handlers
     logger.info("Registering command handlers")
 
+    # Subscription commands
+    app.add_handler(CommandHandler("subscribe", subscribe_handler))
+    app.add_handler(CommandHandler("unsubscribe", unsubscribe_handler))
+    app.add_handler(CommandHandler("mystatus", mystatus_handler))
+
     # Core commands
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("run", run_handler))
@@ -63,5 +71,5 @@ def create_bot(token: str) -> Application:
     app.add_handler(CommandHandler("add_platform", add_platform_handler))
     app.add_handler(CommandHandler("remove_platform", remove_platform_handler))
 
-    logger.info("Bot application created successfully with %d handlers", 10)
+    logger.info("Bot application created successfully with 13 handlers")
     return app

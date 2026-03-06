@@ -2,6 +2,7 @@
 Main entry point for VoteFlux QA automation bot.
 
 Initializes bot, scheduler, and handles graceful shutdown.
+Subscription-based broadcast model — no hardcoded TG_CHAT_ID required.
 """
 
 import asyncio
@@ -16,6 +17,7 @@ from scheduler.scheduler import TaskScheduler
 from storage.report_store import ReportStore
 from storage.schedule_store import ScheduleStore
 from storage.platform_store import PlatformStore
+from storage.subscriber_store import SubscriberStore
 
 # Configure logging
 logging.basicConfig(
@@ -63,7 +65,9 @@ class BotManager:
             report_store = ReportStore(settings.REPORTS_DIR)
             schedule_store = ScheduleStore()
             platform_store = PlatformStore(settings.PLATFORM_STORE_PATH)
+            subscriber_store = SubscriberStore(settings.SUBSCRIBER_STORE_PATH)
             logger.info(f"Loaded {platform_store.count()} platforms")
+            logger.info(f"Loaded {subscriber_store.count()} subscribers")
 
             # Create bot application
             logger.info("Creating bot application...")
@@ -73,6 +77,7 @@ class BotManager:
             self.app.bot_data["report_store"] = report_store
             self.app.bot_data["schedule_store"] = schedule_store
             self.app.bot_data["platform_store"] = platform_store
+            self.app.bot_data["subscriber_store"] = subscriber_store
             self.app.bot_data["is_running"] = False
 
             # Initialize and start scheduler
@@ -107,6 +112,9 @@ class BotManager:
 
                 logger.info("=" * 60)
                 logger.info("Bot is running and ready!")
+                logger.info(f"  Subscribers: {subscriber_store.count()}")
+                logger.info(f"  Platforms: {platform_store.count()}")
+                logger.info(f"  Schedule: {settings.CRON_SCHEDULE}")
                 logger.info("=" * 60)
 
                 # Wait for shutdown signal
@@ -126,17 +134,15 @@ class BotManager:
             logger.info("Bot shutdown complete")
 
     async def stop(self) -> None:
-        """
-        Gracefully stop the bot and scheduler.
-
-        Signals the shutdown event to wake up the waiting task.
-        """
+        """Gracefully stop the bot and scheduler."""
         logger.info("Received shutdown signal")
         self._shutdown_event.set()
 
     def _validate_settings(self) -> None:
         """
         Validate required environment variables.
+
+        Only TG_BOT_TOKEN is required now (no TG_CHAT_ID needed).
 
         Raises:
             ValueError: If required settings are missing
@@ -146,51 +152,30 @@ class BotManager:
                 "TG_BOT_TOKEN environment variable is required"
             )
 
-        if not settings.TG_CHAT_ID:
-            raise ValueError(
-                "TG_CHAT_ID environment variable is required"
-            )
-
-        logger.info(f"Settings validated")
+        logger.info("Settings validated")
         logger.info(f"  REPORTS_DIR: {settings.REPORTS_DIR}")
         logger.info(f"  PLATFORM_STORE: {settings.PLATFORM_STORE_PATH}")
+        logger.info(f"  SUBSCRIBER_STORE: {settings.SUBSCRIBER_STORE_PATH}")
         logger.info(f"  CRON_SCHEDULE: {settings.CRON_SCHEDULE}")
-        logger.info(f"  TG_CHAT_ID: {settings.TG_CHAT_ID}")
 
     def _setup_signal_handlers(self) -> None:
-        """
-        Setup signal handlers for graceful shutdown.
-
-        Handles SIGINT (Ctrl+C) and SIGTERM signals.
-        """
+        """Setup signal handlers for graceful shutdown."""
         loop = asyncio.get_event_loop()
 
         def signal_handler(signum, frame):
-            """Handle shutdown signals."""
             logger.info(f"Received signal {signum}")
             asyncio.create_task(self.stop())
 
-        # Register signal handlers
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
     async def _polling_error_handler(self, update, context) -> None:
-        """
-        Handle polling errors.
-
-        Args:
-            update: Update object
-            context: CallbackContext object
-        """
+        """Handle polling errors."""
         logger.error(f"Polling error: {context.error}", exc_info=context.error)
 
 
 async def main() -> None:
-    """
-    Main entry point.
-
-    Creates and starts the bot manager.
-    """
+    """Main entry point."""
     manager = BotManager()
 
     try:

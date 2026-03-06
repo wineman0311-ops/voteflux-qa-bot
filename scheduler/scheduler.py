@@ -2,6 +2,7 @@
 Task scheduler using APScheduler for automated analysis runs.
 
 Manages scheduling of periodic QA analysis and report generation.
+Broadcasts reports to all subscribers instead of a single chat ID.
 """
 
 import asyncio
@@ -26,7 +27,7 @@ class TaskScheduler:
     Manages scheduled execution of QA analysis.
 
     Uses APScheduler's AsyncIOScheduler to run periodic analysis based on
-    cron expressions. Results are sent to Telegram chat.
+    cron expressions. Results are broadcast to all subscribers.
     """
 
     def __init__(
@@ -54,8 +55,6 @@ class TaskScheduler:
     def start(self) -> None:
         """
         Start the scheduler with current cron schedule.
-
-        Reads cron expression from schedule_store and starts the scheduler.
         """
         try:
             if self.scheduler.running:
@@ -65,10 +64,7 @@ class TaskScheduler:
             cron_expr = self.schedule_store.get_schedule()
             logger.info(f"Starting scheduler with cron: {cron_expr}")
 
-            # Start the scheduler
             self.scheduler.start()
-
-            # Add job for scheduled analysis
             self._add_scheduled_job(cron_expr)
 
             logger.info("Scheduler started successfully")
@@ -78,11 +74,7 @@ class TaskScheduler:
             raise
 
     def stop(self) -> None:
-        """
-        Shutdown the scheduler gracefully.
-
-        Removes jobs and shuts down the scheduler.
-        """
+        """Shutdown the scheduler gracefully."""
         try:
             if not self.scheduler.running:
                 logger.warning("Scheduler not running")
@@ -99,8 +91,6 @@ class TaskScheduler:
         """
         Update the schedule with a new cron expression.
 
-        Removes the old job and creates a new one with the updated schedule.
-
         Args:
             cron_expr: New cron expression
 
@@ -110,12 +100,10 @@ class TaskScheduler:
         try:
             logger.info(f"Updating schedule to: {cron_expr}")
 
-            # Validate and save new schedule
             if not self.schedule_store.set_schedule(cron_expr):
                 logger.error(f"Invalid cron expression: {cron_expr}")
                 return False
 
-            # Remove old job if exists
             if self.scheduler.running:
                 try:
                     self.scheduler.remove_job(self._job_id)
@@ -123,7 +111,6 @@ class TaskScheduler:
                 except Exception as e:
                     logger.warning(f"Could not remove old job: {str(e)}")
 
-                # Add new job
                 self._add_scheduled_job(cron_expr)
 
             logger.info("Schedule updated successfully")
@@ -134,38 +121,20 @@ class TaskScheduler:
             return False
 
     def get_next_runs(self, count: int = 3) -> List[datetime]:
-        """
-        Get the next scheduled run times.
-
-        Args:
-            count: Number of next runs to return
-
-        Returns:
-            List of datetime objects for next scheduled runs
-        """
+        """Get the next scheduled run times."""
         try:
             cron_expr = self.schedule_store.get_schedule()
-
             from croniter import croniter
-
             base = datetime.now()
             cron = croniter(cron_expr, base)
-
             return [cron.get_next(datetime) for _ in range(count)]
-
         except Exception as e:
             logger.error(f"Error calculating next runs: {str(e)}")
             return []
 
     def _add_scheduled_job(self, cron_expr: str) -> None:
-        """
-        Add scheduled analysis job to scheduler.
-
-        Args:
-            cron_expr: Cron expression for scheduling
-        """
+        """Add scheduled analysis job to scheduler."""
         try:
-            # Parse cron expression (minute, hour, day, month, day_of_week)
             parts = cron_expr.split()
             if len(parts) != 5:
                 raise ValueError(f"Invalid cron expression: {cron_expr}")
@@ -195,121 +164,115 @@ class TaskScheduler:
 
     async def _scheduled_job(self) -> None:
         """
-        The scheduled job that runs analysis and sends results.
+        The scheduled job that runs analysis and broadcasts to all subscribers.
 
         This async method is called by the scheduler at the specified time.
-        It runs analysis in a thread to avoid blocking the scheduler.
         """
+        logger.info("Scheduled job triggered")
+        version = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Get subscriber store from bot_data
+        subscriber_store = self.bot_app.bot_data.get("subscriber_store")
+        if not subscriber_store:
+            logger.error("No subscriber_store in bot_data")
+            return
+
+        chat_ids = subscriber_store.get_all_chat_ids()
+        if not chat_ids:
+            logger.info("No subscribers — skipping broadcast")
+            return
+
+        # Notify subscribers: analysis starting
+        for chat_id in chat_ids:
+            try:
+                await self.bot_app.bot.send_message(
+                    chat_id=chat_id,
+                    text="🔄 定時分析開始\n\n請稍候...",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to notify {chat_id} of start: {e}")
+
         try:
-            logger.info("Scheduled job triggered")
-
-            # Generate version
-            version = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-            # Get TG_CHAT_ID from settings
-            from config.settings import TG_CHAT_ID
-
-            if not TG_CHAT_ID:
-                logger.error("TG_CHAT_ID not configured")
-                return
-
-            # Send initial message
-            await self.bot_app.bot.send_message(
-                chat_id=TG_CHAT_ID,
-                text="🔄 定時分析開始\n\n請稍候...",
-            )
-
             # Run analysis in thread
             report_path, summary_text, error_msg = await asyncio.to_thread(
                 self._run_analysis_sync, version
             )
 
             if error_msg:
-                # Send error message
-                error_message = (
-                    "❌ 定時分析失敗\n\n"
-                    f"錯誤: {error_msg}\n\n"
-                    "請檢查日誌"
-                )
-                await self.bot_app.bot.send_message(
-                    chat_id=TG_CHAT_ID,
-                    text=error_message,
-                )
+                for chat_id in chat_ids:
+                    try:
+                        await self.bot_app.bot.send_message(
+                            chat_id=chat_id,
+                            text=(
+                                "❌ 定時分析失敗\n\n"
+                                f"錯誤: {error_msg}\n\n"
+                                "請檢查日誌"
+                            ),
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to notify {chat_id} of error: {e}")
                 logger.error(f"Scheduled analysis failed: {error_msg}")
                 return
 
-            # Send summary
-            summary_message = f"✅ 定時分析完成\n\n{summary_text}"
-            await self.bot_app.bot.send_message(
-                chat_id=TG_CHAT_ID,
-                text=summary_message,
-            )
-
-            # Send report
-            if report_path:
-                with open(report_path, "rb") as report_file:
-                    await self.bot_app.bot.send_document(
-                        chat_id=TG_CHAT_ID,
-                        document=report_file,
-                        caption=f"VoteFlux QA 報告 - {version}",
-                        filename=f"VoteFlux_Analysis_Report_{version}.html",
+            # Broadcast report to all subscribers
+            success_count = 0
+            for chat_id in chat_ids:
+                try:
+                    await self.bot_app.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"✅ 定時分析完成\n\n{summary_text}",
                     )
+                    if report_path:
+                        with open(report_path, "rb") as report_file:
+                            await self.bot_app.bot.send_document(
+                                chat_id=chat_id,
+                                document=report_file,
+                                caption=f"VoteFlux QA 報告 - {version}",
+                                filename=f"VoteFlux_Analysis_Report_{version}.html",
+                            )
+                    success_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to send to subscriber {chat_id}: {e}")
 
-            logger.info(f"Scheduled job completed successfully, version: {version}")
+            logger.info(
+                f"Scheduled job done. Notified {success_count}/{len(chat_ids)} subscribers. "
+                f"Version: {version}"
+            )
 
         except Exception as e:
-            logger.error(
-                f"Error in scheduled job: {str(e)}", exc_info=True
-            )
-
-            # Try to send error notification
-            try:
-                from config.settings import TG_CHAT_ID
-
-                await self.bot_app.bot.send_message(
-                    chat_id=TG_CHAT_ID,
-                    text=(
-                        "❌ 定時分析執行失敗\n\n"
-                        f"詳情: {str(e)}\n\n"
-                        "請檢查日誌"
-                    ),
-                )
-            except Exception as notify_error:
-                logger.error(f"Failed to send error notification: {notify_error}")
+            logger.error(f"Error in scheduled job: {str(e)}", exc_info=True)
+            for chat_id in chat_ids:
+                try:
+                    await self.bot_app.bot.send_message(
+                        chat_id=chat_id,
+                        text=(
+                            "❌ 定時分析執行失敗\n\n"
+                            f"詳情: {str(e)}\n\n"
+                            "請檢查日誌"
+                        ),
+                    )
+                except Exception:
+                    pass
 
     def _run_analysis_sync(self, version: str = "") -> tuple:
-        """
-        Run analysis synchronously (called in thread from async context).
-
-        Args:
-            version: Version string for this analysis
-
-        Returns:
-            Tuple of (report_path, summary_text, error_msg)
-        """
+        """Run analysis synchronously (called in thread)."""
         try:
             logger.info(f"Running analysis, version: {version}")
 
-            # Initialize orchestrator
             orchestrator = AnalysisOrchestrator(version=version)
 
             # TODO: Load actual scraped data
-            # For now, use empty data to avoid errors
             platforms_data = []
             countries_data = []
 
-            # Run analysis
             result = orchestrator.run_analysis(platforms_data, countries_data)
 
-            # Generate HTML report
             generator = ReportGenerator()
             html_content = generator.generate(result)
 
-            # Save report
             report_path = str(self.report_store.save_report(html_content, version))
             logger.info(f"Report saved: {report_path}")
 
-            # Generate summary
             summary_parts = [
                 f"✅ 分析完成 v{version}",
                 f"📊 平台數量: {len(result.platforms)}",
@@ -318,15 +281,10 @@ class TaskScheduler:
 
             if result.alerts:
                 summary_parts.append(f"⚠️ 警報: {len(result.alerts)} 個")
-
             if result.recommendations:
-                summary_parts.append(
-                    f"💡 建議: {len(result.recommendations)} 個"
-                )
+                summary_parts.append(f"💡 建議: {len(result.recommendations)} 個")
 
-            summary_text = "\n".join(summary_parts)
-
-            return report_path, summary_text, None
+            return report_path, "\n".join(summary_parts), None
 
         except Exception as e:
             logger.error(f"Analysis sync failed: {str(e)}", exc_info=True)
