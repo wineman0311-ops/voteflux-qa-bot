@@ -21,14 +21,17 @@ from storage.schedule_store import ScheduleStore
 from storage.platform_store import PlatformStore
 from storage.subscriber_store import SubscriberStore
 
-# Configure logging
+# Configure logging — always log to stdout; file logging is optional
+_log_handlers = [logging.StreamHandler(sys.stdout)]
+try:
+    _log_handlers.append(logging.FileHandler("bot.log"))
+except Exception:
+    pass  # container may not have a writable working directory
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("bot.log"),
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=_log_handlers,
 )
 
 logger = logging.getLogger(__name__)
@@ -113,7 +116,7 @@ class BotManager:
                 logger.info("Starting polling...")
                 await self.app.updater.start_polling(
                     allowed_updates=[],
-                    error_callback=self._polling_error_handler,
+                    error_callback=self._on_polling_error,
                 )
 
                 logger.info("=" * 60)
@@ -203,9 +206,9 @@ class BotManager:
         except Exception as e:
             logger.warning(f"Failed to set bot commands: {e}")
 
-    async def _polling_error_handler(self, update, context) -> None:
-        """Handle polling errors."""
-        logger.error(f"Polling error: {context.error}", exc_info=context.error)
+    def _on_polling_error(self, error: Exception) -> None:
+        """Handle polling-level errors (network issues, timeouts, etc.)."""
+        logger.error(f"Polling error: {error}", exc_info=error)
 
 
 async def main() -> None:
