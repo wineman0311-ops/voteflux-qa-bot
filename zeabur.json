@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.zeabur.app/template.json",
+  "build": {
+    "dockerfile": {
+      "path": "./Dockerfile"
+    }
+  },
+  "env": {
+    "TG_BOT_TOKEN": {
+      "description": "Telegram Bot Token (from @BotFather)",
+      "required": true
+    },
+    "TG_CHAT_ID": {
+      "description": "Telegram Chat ID to receive reports",
+      "required": true
+    },
+    "CRON_SCHEDULE": {
+      "description": "Default cron schedule (e.g., '0 9 * * *' for daily 9am)",
+      "default": "0 9 * * *"
+    },
+    "VF_EMAIL": {
+      "description": "VoteFlux Google login email (optional)",
+      "required": false
+    },
+    "VF_PASSWORD": {
+      "description": "VoteFlux Google login password (optional)",
+      "required": false
+    },
+    "REPORTS_DIR": {
+      "description": "Directory to store generated reports",
+      "default": "./reports"
+    },
+    "PLATFORM_STORE_PATH": {
+      "description": "Path to platforms JSON config file",
+      "default": "./platforms.json"
+    },
+    "PLATFORMS_JSON": {
+      "description": "Initial platforms list as JSON array (optional, overrides defaults on first run)",
+      "required": false
+    }
+  }
+}

@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoteFlux 預測市場競品分析報告</title>
+    <style>
+        :root {
+            --primary: #6C5CE7;
+            --primary-light: #A29BFE;
+            --accent: #00CEC9;
+            --danger: #FF6B6B;
+            --warning: #FDCB6E;
+            --success: #00B894;
+            --bg: #0F0F1A;
+            --card: #1A1A2E;
+            --card-alt: #16213E;
+            --text: #E8E8F0;
+            --text-muted: #9B9BB0;
+            --border: #2D2D44;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header Styles */
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            padding: 60px 40px;
+            border-radius: 12px;
+            margin-bottom: 40px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -10%;
+            width: 400px;
+            height: 400px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+        }
+
+        .header-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: white;
+        }
+
+        .header-subtitle {
+            font-size: 1em;
+            color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 20px;
+        }
+
+        .version-badge {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            margin-right: 10px;
+        }
+
+        .date-badge {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9em;
+        }
+
+        /* Section Headings */
+        h2 {
+            font-size: 1.8em;
+            color: var(--text);
+            margin-top: 50px;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        h3 {
+            font-size: 1.3em;
+            color: var(--text);
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+
+        h4 {
+            font-size: 1.1em;
+            color: var(--text);
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        /* Alert Cards */
+        .alerts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .alert {
+            background-color: var(--card);
+            border-left: 5px solid;
+            padding: 20px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .alert:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .alert-success {
+            border-left-color: var(--success);
+        }
+
+        .alert-danger {
+            border-left-color: var(--danger);
+        }
+
+        .alert-warning {
+            border-left-color: var(--warning);
+        }
+
+        .alert-info {
+            border-left-color: var(--accent);
+        }
+
+        .alert-title {
+            font-weight: 600;
+            margin-bottom: 5px;
+            font-size: 1.05em;
+        }
+
+        .alert-description {
+            color: var(--text-muted);
+            font-size: 0.95em;
+        }
+
+        /* Tables */
+        .table-wrapper {
+            overflow-x: auto;
+            margin-bottom: 30px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: var(--card);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        thead {
+            background-color: var(--card-alt);
+        }
+
+        th {
+            padding: 15px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--accent);
+            font-size: 0.95em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 12px 12px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.95em;
+        }
+
+        tbody tr:hover {
+            background-color: var(--card-alt);
+            transition: background-color 0.2s ease;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Score Colors */
+        .score-high {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        .score-medium {
+            color: var(--warning);
+            font-weight: 600;
+        }
+
+        .score-low {
+            color: var(--danger);
+            font-weight: 600;
+        }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 500;
+            margin-right: 5px;
+            margin-bottom: 5px;
+        }
+
+        .badge-primary {
+            background-color: rgba(108, 92, 231, 0.2);
+            color: var(--primary-light);
+        }
+
+        .badge-accent {
+            background-color: rgba(0, 206, 201, 0.2);
+            color: var(--accent);
+        }
+
+        .badge-success {
+            background-color: rgba(0, 184, 148, 0.2);
+            color: var(--success);
+        }
+
+        .badge-warning {
+            background-color: rgba(253, 203, 110, 0.2);
+            color: var(--warning);
+        }
+
+        .badge-danger {
+            background-color: rgba(255, 107, 107, 0.2);
+            color: var(--danger);
+        }
+
+        /* Platform Cards Grid */
+        .platforms-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .platform-card {
+            background-color: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .platform-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(108, 92, 231, 0.15);
+            border-color: var(--primary);
+        }
+
+        .platform-card.error {
+            opacity: 0.6;
+        }
+
+        .platform-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+
+        .platform-name {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .platform-role {
+            font-size: 0.85em;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .platform-score {
+            font-size: 1.5em;
+            font-weight: 700;
+        }
+
+        .platform-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+            padding: 15px 0;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.4em;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 0.8em;
+            color: var(--text-muted);
+            margin-top: 3px;
+        }
+
+        .platform-url {
+            display: inline-block;
+            font-size: 0.85em;
+            color: var(--accent);
+            text-decoration: none;
+            word-break: break-all;
+            margin-bottom: 10px;
+        }
+
+        .platform-url:hover {
+            text-decoration: underline;
+        }
+
+        .platform-features {
+            margin-top: 15px;
+        }
+
+        .platform-features-label {
+            font-size: 0.9em;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .feature-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .platform-error {
+            background-color: rgba(255, 107, 107, 0.1);
+            border-left: 4px solid var(--danger);
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: var(--danger);
+        }
+
+        /* Country Cards Grid */
+        .countries-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .country-card {
+            background-color: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .country-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0, 206, 201, 0.1);
+        }
+
+        .country-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .country-flag {
+            font-size: 2em;
+        }
+
+        .country-name {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .country-name-en {
+            font-size: 0.85em;
+            color: var(--text-muted);
+        }
+
+        .news-items {
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .news-item {
+            margin-bottom: 12px;
+        }
+
+        .news-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .news-title {
+            font-weight: 600;
+            color: var(--accent);
+            font-size: 0.95em;
+            margin-bottom: 3px;
+        }
+
+        .news-source {
+            font-size: 0.8em;
+            color: var(--text-muted);
+        }
+
+        .suggested-markets-label {
+            font-size: 0.9em;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .suggested-market {
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+
+        .suggested-market-question {
+            color: var(--text);
+            margin-bottom: 2px;
+        }
+
+        .suggested-market-reason {
+            font-size: 0.85em;
+            color: var(--text-muted);
+        }
+
+        /* Recommendations */
+        .recommendations-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .recommendation {
+            background-color: var(--card);
+            border-left: 5px solid;
+            padding: 20px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .recommendation:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .recommendation-p0 {
+            border-left-color: var(--danger);
+        }
+
+        .recommendation-p1 {
+            border-left-color: var(--warning);
+        }
+
+        .recommendation-p2 {
+            border-left-color: var(--primary);
+        }
+
+        .rec-priority {
+            display: inline-block;
+            font-weight: 700;
+            font-size: 0.85em;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .rec-p0 {
+            color: var(--danger);
+        }
+
+        .rec-p1 {
+            color: var(--warning);
+        }
+
+        .rec-p2 {
+            color: var(--primary);
+        }
+
+        .rec-title {
+            font-weight: 600;
+            margin-bottom: 10px;
+            font-size: 1.05em;
+            color: var(--text);
+        }
+
+        .rec-actions {
+            list-style: none;
+        }
+
+        .rec-actions li {
+            padding: 5px 0;
+            padding-left: 20px;
+            position: relative;
+            font-size: 0.9em;
+            color: var(--text-muted);
+        }
+
+        .rec-actions li::before {
+            content: '▸';
+            position: absolute;
+            left: 0;
+            color: var(--text-muted);
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 60px;
+            padding-top: 30px;
+            border-top: 2px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9em;
+        }
+
+        .footer-text {
+            margin-bottom: 10px;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+
+            .header {
+                padding: 40px 20px;
+            }
+
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            h2 {
+                font-size: 1.5em;
+            }
+
+            .platforms-grid,
+            .countries-grid,
+            .alerts-grid,
+            .recommendations-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .platform-stats {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            th, td {
+                padding: 10px 8px;
+                font-size: 0.85em;
+            }
+
+            .version-badge,
+            .date-badge {
+                display: block;
+                margin-bottom: 8px;
+            }
+        }
+
+        /* Print Styles */
+        @media print {
+            body {
+                background-color: white;
+                color: black;
+            }
+
+            .container {
+                max-width: 100%;
+                padding: 0;
+            }
+
+            .platform-card:hover,
+            .country-card:hover,
+            .alert:hover,
+            .recommendation:hover {
+                transform: none;
+                box-shadow: none;
+            }
+        }
+
+        /* Utility Classes */
+        .text-center {
+            text-align: center;
+        }
+
+        .mt-20 {
+            margin-top: 20px;
+        }
+
+        .mb-20 {
+            margin-bottom: 20px;
+        }
+
+        .mt-40 {
+            margin-top: 40px;
+        }
+
+        .mb-40 {
+            margin-bottom: 40px;
+        }
+
+        .flex {
+            display: flex;
+        }
+
+        .gap-10 {
+            gap: 10px;
+        }
+
+        .items-center {
+            align-items: center;
+        }
+
+        .justify-between {
+            justify-content: space-between;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header Section -->
+        <div class="header">
+            <div class="header-content">
+                <h1>VoteFlux 預測市場競品分析報告</h1>
+                <div class="header-subtitle">
+                    {% for platform in platforms %}
+                        {% if not loop.last %}{{ platform.name }} / {% else %}{{ platform.name }}{% endif %}
+                    {% endfor %}
+                </div>
+                <div style="margin-top: 15px;">
+                    <span class="version-badge">v{{ version }}</span>
+                    <span class="date-badge">📅 {{ date_short }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Critical Alerts Section -->
+        <h2>🚨 關鍵警報</h2>
+        <div class="alerts-grid">
+            {% for alert in alerts %}
+            <div class="alert alert-{{ alert.type }}">
+                <div class="alert-title">{{ alert.title }}</div>
+                <div class="alert-description">{{ alert.description }}</div>
+            </div>
+            {% else %}
+            <p style="color: var(--text-muted);">暫無警報</p>
+            {% endfor %}
+        </div>
+
+        <!-- Statistics Overview -->
+        <div class="table-wrapper" style="margin-bottom: 40px;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>統計項目</th>
+                        <th>數值</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>分析平台數</td>
+                        <td><strong>{{ statistics.total_platforms }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td>成功爬蟲數</td>
+                        <td><strong style="color: var(--success);">{{ statistics.successful_platforms }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td>全部市場數</td>
+                        <td><strong>{{ statistics.total_markets }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td>全部分類數</td>
+                        <td><strong>{{ statistics.total_categories }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td>分析國家數</td>
+                        <td><strong>{{ statistics.total_countries }}</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- VoteFlux Deep Dive -->
+        {% if voteflux.market_count %}
+        <h2>🎯 VoteFlux 深度分析</h2>
+
+        <h3>市場結構分布</h3>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>分類</th>
+                        <th>市場數</th>
+                        <th>佔比</th>
+                        <th>代表性市場</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for category in voteflux.categories %}
+                    <tr>
+                        <td><strong>{{ category.name }}</strong></td>
+                        <td>{{ category.count }}</td>
+                        <td>{{ category.percentage }}</td>
+                        <td>
+                            {% set representative = voteflux.top_markets|first %}
+                            {% if representative %}
+                                {{ representative.question[:50] }}...
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <h3>實時市場數據</h3>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>問題</th>
+                        <th>交易量</th>
+                        <th>參與者</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for market in voteflux.top_markets[:5] %}
+                    <tr>
+                        <td>{{ market.question }}</td>
+                        <td>{{ market.volume or 'N/A' }}</td>
+                        <td>{{ market.participants or 'N/A' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="3" class="text-center" style="color: var(--text-muted);">暫無市場數據</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <h3>跨平台交易量對比</h3>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>平台</th>
+                        <th>市場數</th>
+                        <th>交易量信息</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for platform_vol in voteflux.volume_comparison %}
+                    <tr>
+                        <td><strong>{{ platform_vol.name }}</strong></td>
+                        <td>{{ platform_vol.markets }}</td>
+                        <td>{{ platform_vol.volume }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <!-- Scoring Matrix -->
+        <h2>📊 平台評分矩陣</h2>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>平台</th>
+                        <th>市場多樣性</th>
+                        <th>功能特色</th>
+                        <th>UI 設計</th>
+                        <th>UX 體驗</th>
+                        <th>總分</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in scoring_matrix %}
+                    <tr>
+                        <td><strong>{{ row.platform }}</strong></td>
+                        <td class="{% if row.market_variety >= 8 %}score-high{% elif row.market_variety >= 6 %}score-medium{% else %}score-low{% endif %}">
+                            {{ row.market_variety }}
+                        </td>
+                        <td class="{% if row.features >= 8 %}score-high{% elif row.features >= 6 %}score-medium{% else %}score-low{% endif %}">
+                            {{ row.features }}
+                        </td>
+                        <td class="{% if row.ui_design >= 8 %}score-high{% elif row.ui_design >= 6 %}score-medium{% else %}score-low{% endif %}">
+                            {{ row.ui_design }}
+                        </td>
+                        <td class="{% if row.ux_experience >= 8 %}score-high{% elif row.ux_experience >= 6 %}score-medium{% else %}score-low{% endif %}">
+                            {{ row.ux_experience }}
+                        </td>
+                        <td class="{% if row.total >= 8 %}score-high{% elif row.total >= 6 %}score-medium{% else %}score-low{% endif %}">
+                            <strong>{{ row.total }}/10</strong>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Platform Details Cards -->
+        <h2>🏢 平台詳情</h2>
+        <div class="platforms-grid">
+            {% for platform in platforms %}
+            <div class="platform-card {% if platform.status != 'success' %}error{% endif %}">
+                <div class="platform-header">
+                    <div>
+                        <div class="platform-name">{{ platform.name }}</div>
+                        <div class="platform-role">{{ platform.role }}</div>
+                    </div>
+                    {% if platform.score > 0 %}
+                    <div class="platform-score {% if platform.score >= 8 %}score-high{% elif platform.score >= 6 %}score-medium{% else %}score-low{% endif %}">
+                        {{ platform.score }}
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if platform.status == 'success' %}
+                <a href="{{ platform.url }}" class="platform-url" target="_blank">{{ platform.url }}</a>
+
+                <div class="platform-stats">
+                    <div class="stat">
+                        <div class="stat-value">{{ platform.market_count }}</div>
+                        <div class="stat-label">市場數</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">{{ platform.category_count }}</div>
+                        <div class="stat-label">分類數</div>
+                    </div>
+                </div>
+
+                {% if platform.features %}
+                <div class="platform-features">
+                    <span class="platform-features-label">功能特色</span>
+                    <div class="feature-tags">
+                        {% for feature in platform.features[:6] %}
+                        <span class="badge badge-accent">{{ feature }}</span>
+                        {% endfor %}
+                        {% if platform.features|length > 6 %}
+                        <span class="badge badge-primary">+{{ platform.features|length - 6 }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if platform.ui_notes %}
+                <p style="font-size: 0.9em; color: var(--text-muted); margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border);">
+                    <strong>UI 評註：</strong> {{ platform.ui_notes }}
+                </p>
+                {% endif %}
+
+                {% if platform.ux_notes %}
+                <p style="font-size: 0.9em; color: var(--text-muted); margin-top: 10px;">
+                    <strong>UX 評註：</strong> {{ platform.ux_notes }}
+                </p>
+                {% endif %}
+                {% else %}
+                <div class="platform-error">
+                    ❌ 爬蟲失敗：{{ platform.error_msg or '未知錯誤' }}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Hot Topics by Country -->
+        <h2>🌍 熱門話題與市場機會</h2>
+        <div class="countries-grid">
+            {% for country in countries %}
+            <div class="country-card">
+                <div class="country-header">
+                    <span class="country-flag">{{ country.flag }}</span>
+                    <div>
+                        <div class="country-name">{{ country.name }}</div>
+                        <div class="country-name-en">{{ country.name_en }}</div>
+                    </div>
+                </div>
+
+                {% if country.news_items %}
+                <div class="news-items">
+                    <strong style="color: var(--accent); font-size: 0.9em; display: block; margin-bottom: 10px;">📰 最新新聞</strong>
+                    {% for news in country.news_items %}
+                    <div class="news-item">
+                        <div class="news-title">{{ news.title }}</div>
+                        <div class="news-source">來源：{{ news.source }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if country.suggested_markets %}
+                <div>
+                    <span class="suggested-markets-label">💡 建議市場</span>
+                    {% for market in country.suggested_markets %}
+                    <div class="suggested-market">
+                        <div class="suggested-market-question">{{ market.question }}</div>
+                        <div class="suggested-market-reason">
+                            契合度：
+                            {% if 'high' in market.suitability.lower() or '高' in market.suitability %}
+                            <span class="badge badge-success">高</span>
+                            {% elif 'medium' in market.suitability.lower() or '中' in market.suitability %}
+                            <span class="badge badge-warning">中</span>
+                            {% else %}
+                            <span class="badge badge-danger">低</span>
+                            {% endif %}
+                        </div>
+                        <div class="suggested-market-reason" style="font-style: italic; margin-top: 2px;">{{ market.reason }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Recommendations -->
+        <h2>🎯 建議與行動項</h2>
+
+        {% if recommendations_by_priority.P0 %}
+        <h3 style="color: var(--danger);">🔴 P0 優先級 - 緊急</h3>
+        <div class="recommendations-grid">
+            {% for rec in recommendations_by_priority.P0 %}
+            <div class="recommendation recommendation-p0">
+                <div class="rec-priority rec-p0">{{ rec.priority }}</div>
+                <div class="rec-title">{{ rec.title }}</div>
+                <ul class="rec-actions">
+                    {% for action in rec.actions %}
+                    <li>{{ action }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if recommendations_by_priority.P1 %}
+        <h3 style="color: var(--warning);">🟡 P1 優先級 - 高</h3>
+        <div class="recommendations-grid">
+            {% for rec in recommendations_by_priority.P1 %}
+            <div class="recommendation recommendation-p1">
+                <div class="rec-priority rec-p1">{{ rec.priority }}</div>
+                <div class="rec-title">{{ rec.title }}</div>
+                <ul class="rec-actions">
+                    {% for action in rec.actions %}
+                    <li>{{ action }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if recommendations_by_priority.P2 %}
+        <h3 style="color: var(--primary);">🟣 P2 優先級 - 中等</h3>
+        <div class="recommendations-grid">
+            {% for rec in recommendations_by_priority.P2 %}
+            <div class="recommendation recommendation-p2">
+                <div class="rec-priority rec-p2">{{ rec.priority }}</div>
+                <div class="rec-title">{{ rec.title }}</div>
+                <ul class="rec-actions">
+                    {% for action in rec.actions %}
+                    <li>{{ action }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="footer-text">
+                <strong>VoteFlux 預測市場競品分析報告</strong>
+            </div>
+            <div class="footer-text">
+                版本: {{ version }} | 生成時間: {{ date }} | 語言: 繁體中文
+            </div>
+            <div class="footer-text" style="font-size: 0.85em; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border);">
+                本報告基於自動爬蟲分析生成，數據可能存在延遲。<br>
+                數據來源：各預測市場平台官方網站、新聞 API、市場數據 API<br>
+                本報告僅供參考，不構成投資建議。
+            </div>
+        </div>
+    </div>
+</body>
+</html>
