@@ -5,21 +5,43 @@ Initializes bot, scheduler, and handles graceful shutdown.
 Subscription-based broadcast model — no hardcoded TG_CHAT_ID required.
 """
 
-import asyncio
-import logging
-import signal
-import sys
-from typing import Optional
+# ── Early-boot diagnostic: print to stdout BEFORE any imports ──────────────
+# If nothing appears in Runtime Logs at all, Python itself fails to start
+import sys as _sys
+print("=== VoteFlux QA Bot: Python interpreter started ===", flush=True, file=_sys.stdout)
 
-from telegram import BotCommand
+# ── Now import stdlib and third-party packages, catching any failure ───────
+try:
+    import asyncio
+    import logging
+    import signal
+    from typing import Optional
+    print("=== stdlib imports OK ===", flush=True)
+except Exception as _e:
+    print(f"=== FATAL: stdlib import failed: {_e} ===", flush=True)
+    _sys.exit(1)
 
-from config import settings
-from bot.app import create_bot
-from scheduler.scheduler import TaskScheduler
-from storage.report_store import ReportStore
-from storage.schedule_store import ScheduleStore
-from storage.platform_store import PlatformStore
-from storage.subscriber_store import SubscriberStore
+try:
+    from telegram import BotCommand
+    print("=== python-telegram-bot import OK ===", flush=True)
+except ImportError as _e:
+    print(f"=== FATAL: python-telegram-bot not found: {_e} ===", flush=True)
+    _sys.exit(1)
+
+try:
+    from config import settings
+    from bot.app import create_bot
+    from scheduler.scheduler import TaskScheduler
+    from storage.report_store import ReportStore
+    from storage.schedule_store import ScheduleStore
+    from storage.platform_store import PlatformStore
+    from storage.subscriber_store import SubscriberStore
+    print("=== all local module imports OK ===", flush=True)
+except Exception as _e:
+    print(f"=== FATAL: local module import failed: {_e} ===", flush=True)
+    import traceback
+    traceback.print_exc()
+    _sys.exit(1)
 
 # Configure logging — always log to stdout; file logging is optional
 _log_handlers = [logging.StreamHandler(sys.stdout)]

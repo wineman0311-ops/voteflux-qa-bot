@@ -1,7 +1,16 @@
-__pycache__
+__pycache__/
+**/__pycache__/
 *.pyc
+*.pyo
 .git
+.gitignore
 .env
 .venv
 *.md
 reports/*.html
+bot.log
+storage/main.py
+storage/handlers.py
+storage/app.py
+storage/scheduler.py
+storage/settings.py

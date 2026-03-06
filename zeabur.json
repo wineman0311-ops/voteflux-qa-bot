@@ -10,10 +10,6 @@
       "description": "Telegram Bot Token (from @BotFather)",
       "required": true
     },
-    "TG_CHAT_ID": {
-      "description": "Telegram Chat ID to receive reports",
-      "required": true
-    },
     "CRON_SCHEDULE": {
       "description": "Default cron schedule (e.g., '0 9 * * *' for daily 9am)",
       "default": "0 9 * * *"
@@ -33,6 +29,14 @@
     "PLATFORM_STORE_PATH": {
       "description": "Path to platforms JSON config file",
       "default": "./platforms.json"
+    },
+    "SUBSCRIBER_STORE_PATH": {
+      "description": "Path to subscriber list JSON file",
+      "default": "./subscribers.json"
+    },
+    "CACHE_DIR": {
+      "description": "Directory for same-day scrape cache",
+      "default": "./cache"
     },
     "PLATFORMS_JSON": {
       "description": "Initial platforms list as JSON array (optional, overrides defaults on first run)",
