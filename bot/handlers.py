@@ -493,8 +493,15 @@ async def schedule_handler(
     """
     Handle /schedule command.
 
-    - No args: show current schedule and next 3 run times
-    - With args: update schedule with new cron expression
+    Supports simple time format (no cron knowledge needed):
+      /schedule              → show current schedule
+      /schedule 09:00        → every day at 09:00
+      /schedule 09:00 1-5    → weekdays (Mon-Fri) at 09:00
+      /schedule 09:00 1,3,5  → Mon/Wed/Fri at 09:00
+      /schedule 09:00 0      → Sunday only at 09:00
+      /schedule off          → disable scheduled runs
+
+    Also still accepts raw cron (5 fields) for power users.
     """
     user_id = update.effective_user.id
     logger.info(f"User {user_id} accessed schedule handler")
@@ -504,55 +511,92 @@ async def schedule_handler(
         current_schedule = schedule_store.get_schedule()
 
         if not context.args:
+            # Show current schedule
             next_runs = await asyncio.to_thread(
                 _get_next_runs, current_schedule, count=3
             )
             next_runs_text = "\n".join(
-                [f"  • {run.strftime('%Y-%m-%d %H:%M:%S')}" for run in next_runs]
+                [f"  • {run.strftime('%Y-%m-%d %H:%M')} ({_day_name(run.weekday())})"
+                 for run in next_runs]
             )
+            human_desc = _cron_to_human(current_schedule)
+
             message = (
                 f"📅 當前排程\n\n"
-                f"Cron 表達式: `{current_schedule}`\n\n"
-                f"下次 3 次執行:\n"
-                f"{next_runs_text}\n\n"
-                f"使用 `/schedule <cron表達式>` 更新排程\n"
-                f"例: `/schedule 0 9 * * 1-5` (工作日 9:00)"
+                f"說明: {human_desc}\n"
+                f"Cron: `{current_schedule}`\n\n"
+                f"下次 3 次執行:\n{next_runs_text}\n\n"
+                f"━━━━ 設定方式 ━━━━\n"
+                f"`/schedule 09:00` — 每天早上9點\n"
+                f"`/schedule 18:30 1-5` — 週一至週五18:30\n"
+                f"`/schedule 08:00 1,3,5` — 週一三五08:00\n"
+                f"`/schedule off` — 停用排程"
             )
             await update.message.reply_text(message, parse_mode="Markdown")
+            return
 
+        # Parse input
+        raw = context.args
+
+        # Handle "off" / "disable"
+        if raw[0].lower() in ("off", "disable", "停用", "關閉"):
+            # Set to a far-future cron (run once a year on Feb 30 — never triggers)
+            # Better: just use a placeholder cron that won't run and mark disabled
+            new_cron = "0 0 31 2 *"  # Feb 31 never exists → never runs
+            schedule_store.set_schedule(new_cron)
+            scheduler = context.bot_data.get("scheduler")
+            if scheduler:
+                scheduler.update_schedule(new_cron)
+            await update.message.reply_text(
+                "⏸️ 定時排程已停用\n\n使用 `/schedule HH:MM` 重新啟用"
+            )
+            return
+
+        # Parse simple format or raw cron
+        parsed_cron, parse_error = _parse_schedule_input(raw)
+
+        if parse_error:
+            await update.message.reply_text(
+                f"❌ 格式錯誤：{parse_error}\n\n"
+                f"正確格式範例：\n"
+                f"`/schedule 09:00` — 每天09:00\n"
+                f"`/schedule 18:30 1-5` — 週一至週五18:30\n"
+                f"`/schedule 08:00 1,3,5` — 週一三五08:00\n"
+                f"`/schedule off` — 停用排程",
+                parse_mode="Markdown",
+            )
+            return
+
+        logger.info(f"User {user_id} updating schedule to cron: {parsed_cron}")
+
+        if schedule_store.set_schedule(parsed_cron):
+            next_runs = await asyncio.to_thread(_get_next_runs, parsed_cron, count=3)
+            next_runs_text = "\n".join(
+                [f"  • {run.strftime('%Y-%m-%d %H:%M')} ({_day_name(run.weekday())})"
+                 for run in next_runs]
+            )
+            human_desc = _cron_to_human(parsed_cron)
+
+            # Update live scheduler
+            scheduler = context.bot_data.get("scheduler")
+            if scheduler:
+                scheduler.update_schedule(parsed_cron)
+
+            await update.message.reply_text(
+                f"✅ 排程已更新\n\n"
+                f"說明: {human_desc}\n"
+                f"Cron: `{parsed_cron}`\n\n"
+                f"下次 3 次執行:\n{next_runs_text}",
+                parse_mode="Markdown",
+            )
         else:
-            new_cron = " ".join(context.args)
-            logger.info(f"User {user_id} updating schedule to: {new_cron}")
-
-            if schedule_store.set_schedule(new_cron):
-                try:
-                    next_runs = await asyncio.to_thread(
-                        _get_next_runs, new_cron, count=3
-                    )
-                    next_runs_text = "\n".join(
-                        [f"  • {run.strftime('%Y-%m-%d %H:%M:%S')}" for run in next_runs]
-                    )
-                    message = (
-                        f"✅ 排程已更新\n\n"
-                        f"新表達式: `{new_cron}`\n\n"
-                        f"下次 3 次執行:\n"
-                        f"{next_runs_text}"
-                    )
-                    scheduler = context.bot_data.get("scheduler")
-                    if scheduler:
-                        scheduler.update_schedule(new_cron)
-                    await update.message.reply_text(message, parse_mode="Markdown")
-                except Exception as e:
-                    await update.message.reply_text(
-                        f"⚠️ 排程已保存，但無法計算下次執行時間\n\n"
-                        f"請檢查 Cron 表達式: {new_cron}"
-                    )
-            else:
-                await update.message.reply_text(
-                    f"❌ 無效的 Cron 表達式: {new_cron}\n\n"
-                    f"格式應為: `分 時 日 月 周`\n"
-                    f"例: `0 9 * * 1-5` (工作日 9:00)"
-                )
+            await update.message.reply_text(
+                f"❌ 無效的時間設定\n\n"
+                f"請確認格式，例如：\n"
+                f"`/schedule 09:00`\n"
+                f"`/schedule 18:30 1-5`",
+                parse_mode="Markdown",
+            )
 
     except Exception as e:
         logger.error(f"Error in /schedule handler: {str(e)}", exc_info=True)
@@ -674,8 +718,12 @@ async def help_handler(
         "  例: `/report 20260306_001234`\n\n"
         "⏱️ 排程命令\n"
         "`/schedule` - 查看當前排程\n\n"
-        "`/schedule <表達式>` - 更新排程\n"
-        "  例: `/schedule 0 9 * * 1-5` (工作日 9:00)\n\n"
+        "`/schedule HH:MM` - 每天指定時間執行\n"
+        "  例: `/schedule 09:00` (每天早上9點)\n\n"
+        "`/schedule HH:MM 週範圍` - 指定星期執行\n"
+        "  例: `/schedule 09:00 1-5` (週一至週五)\n"
+        "  例: `/schedule 08:00 1,3,5` (週一三五)\n\n"
+        "`/schedule off` - 停用排程\n\n"
         "🌐 平台管理\n"
         "`/platforms` - 查看所有分析平台\n\n"
         "`/add_platform <ID> <名稱> <網址> [角色]`\n"
@@ -860,3 +908,109 @@ def _get_next_runs(cron_expr: str, count: int = 3) -> list:
     except Exception as e:
         logger.error(f"Error calculating next runs: {str(e)}")
         return []
+
+
+def _parse_schedule_input(args: list) -> tuple[str, Optional[str]]:
+    """
+    Parse simple schedule input and convert to cron expression.
+
+    Supported formats:
+      ["09:00"]           → "0 9 * * *"     (every day)
+      ["09:00", "1-5"]    → "0 9 * * 1-5"  (Mon-Fri)
+      ["09:00", "1,3,5"]  → "0 9 * * 1,3,5" (Mon/Wed/Fri)
+      ["09:00", "*"]      → "0 9 * * *"     (every day explicit)
+      ["0","9","*","*","*"] → "0 9 * * *"   (raw cron, pass-through)
+
+    Returns:
+        (cron_expr, error_message) — error_message is None if successful
+    """
+    if not args:
+        return "", "沒有輸入任何參數"
+
+    # If 5 args → treat as raw cron expression
+    if len(args) == 5:
+        return " ".join(args), None
+
+    # Expect first arg to be HH:MM
+    time_str = args[0]
+    days_str = args[1] if len(args) > 1 else "*"
+
+    # Parse HH:MM
+    try:
+        parts = time_str.split(":")
+        if len(parts) != 2:
+            raise ValueError
+        hour = int(parts[0])
+        minute = int(parts[1])
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError
+    except ValueError:
+        return "", f"時間格式錯誤：`{time_str}`\n請使用 HH:MM 格式，例如 09:00 或 18:30"
+
+    # Validate days field
+    valid_day_chars = set("0123456789,-*/")
+    if not all(c in valid_day_chars for c in days_str):
+        return "", f"星期格式錯誤：`{days_str}`\n請使用數字 0-7（0/7=日，1=一...6=六）或範圍如 1-5"
+
+    cron_expr = f"{minute} {hour} * * {days_str}"
+    return cron_expr, None
+
+
+def _cron_to_human(cron_expr: str) -> str:
+    """
+    Convert cron expression to human-readable Traditional Chinese description.
+
+    Handles common patterns only. Falls back to cron string for complex ones.
+    """
+    DAYS_MAP = {
+        "0": "日", "1": "一", "2": "二", "3": "三",
+        "4": "四", "5": "五", "6": "六", "7": "日",
+    }
+
+    try:
+        parts = cron_expr.strip().split()
+        if len(parts) != 5:
+            return cron_expr
+
+        minute, hour, day, month, dow = parts
+
+        # Build time string
+        try:
+            time_str = f"{int(hour):02d}:{int(minute):02d}"
+        except ValueError:
+            time_str = f"{hour}:{minute}"
+
+        # Interpret day-of-week
+        if dow in ("*", "*/1"):
+            day_str = "每天"
+        elif dow == "1-5":
+            day_str = "週一至週五"
+        elif dow == "0-6" or dow == "1-7":
+            day_str = "每天"
+        elif dow == "6,0" or dow == "0,6":
+            day_str = "週六日"
+        elif "," in dow:
+            names = [f"週{DAYS_MAP.get(d.strip(), d.strip())}" for d in dow.split(",")]
+            day_str = "、".join(names)
+        elif "-" in dow:
+            start, end = dow.split("-", 1)
+            day_str = f"週{DAYS_MAP.get(start, start)}至週{DAYS_MAP.get(end, end)}"
+        elif dow in DAYS_MAP:
+            day_str = f"每週{DAYS_MAP[dow]}"
+        else:
+            day_str = f"dow={dow}"
+
+        # Special: never-run placeholder
+        if day == "31" and month == "2":
+            return "⏸️ 已停用"
+
+        return f"{day_str} {time_str}"
+
+    except Exception:
+        return cron_expr
+
+
+def _day_name(weekday: int) -> str:
+    """Convert Python weekday (0=Mon) to Chinese label."""
+    names = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
+    return names[weekday] if 0 <= weekday <= 6 else ""
