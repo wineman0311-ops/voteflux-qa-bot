@@ -15,9 +15,11 @@ from apscheduler.triggers.cron import CronTrigger
 
 from analyzers.orchestrator import AnalysisOrchestrator
 from config.platforms import PlatformData, CountryNews
+from config.settings import CACHE_DIR
 from report.generator import ReportGenerator
 from storage.report_store import ReportStore
 from storage.schedule_store import ScheduleStore
+from storage.scrape_cache import ScrapeCache
 
 logger = logging.getLogger(__name__)
 
@@ -261,9 +263,30 @@ class TaskScheduler:
 
             orchestrator = AnalysisOrchestrator(version=version)
 
-            # TODO: Load actual scraped data
-            platforms_data = []
-            countries_data = []
+            # ── Same-day cache check ─────────────────────────────────
+            cache = ScrapeCache(CACHE_DIR)
+            platforms_data, countries_data = cache.get_today_cache()
+
+            if platforms_data is not None:
+                logger.info(
+                    f"Scheduler: using today's cached scrape data "
+                    f"({len(platforms_data)} platforms, {len(countries_data)} countries)"
+                )
+                used_cache = True
+            else:
+                logger.info("Scheduler: no today's cache — running fresh scrape")
+                used_cache = False
+
+                # TODO: Replace with actual scraper calls
+                platforms_data = []
+                countries_data = []
+
+                # Persist to cache only if real data was scraped
+                if platforms_data or countries_data:
+                    if cache.save_today_cache(platforms_data, countries_data):
+                        logger.info("Scheduler: fresh scrape data saved to cache")
+                    else:
+                        logger.warning("Scheduler: failed to save scrape data to cache")
 
             result = orchestrator.run_analysis(platforms_data, countries_data)
 
@@ -283,6 +306,11 @@ class TaskScheduler:
                 summary_parts.append(f"⚠️ 警報: {len(result.alerts)} 個")
             if result.recommendations:
                 summary_parts.append(f"💡 建議: {len(result.recommendations)} 個")
+
+            if used_cache:
+                info = cache.get_cache_info()
+                cached_time = info.get("cached_at", "")[:16].replace("T", " ")
+                summary_parts.append(f"💾 資料來自今日快取（{cached_time}）")
 
             return report_path, "\n".join(summary_parts), None
 

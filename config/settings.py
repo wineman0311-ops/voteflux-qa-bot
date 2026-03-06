@@ -28,6 +28,9 @@ PLATFORM_STORE_PATH: str = os.environ.get("PLATFORM_STORE_PATH", "./platforms.js
 # Subscriber Store Path
 SUBSCRIBER_STORE_PATH: str = os.environ.get("SUBSCRIBER_STORE_PATH", "./subscribers.json")
 
+# Scrape Cache Directory
+CACHE_DIR: str = os.environ.get("CACHE_DIR", "./cache")
+
 # Countries Configuration (static — less likely to change)
 COUNTRIES: List[Dict[str, Any]] = [
     {
