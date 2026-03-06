@@ -292,31 +292,83 @@ async def start_handler(
     """
     Handle /start command.
 
-    Sends welcome message with available commands.
+    Sends welcome message. Also auto-subscribes new users if they're not yet subscribed.
     """
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    logger.info(f"User {user.id} started bot")
+
+    subscriber_store = get_subscriber_store(context)
+    already_subscribed = subscriber_store and subscriber_store.is_subscribed(chat_id)
+
+    name = user.first_name or "朋友"
+
     welcome_message = (
-        "歡迎使用 VoteFlux QA 自動化機器人 🤖\n\n"
-        "📬 訂閱功能\n"
-        "/subscribe - 訂閱分析報告\n"
-        "/unsubscribe - 取消訂閱\n"
-        "/mystatus - 查看訂閱狀態\n\n"
-        "🔧 執行功能\n"
-        "/run - 立即執行分析\n"
-        "/status - 查看機器人狀態\n"
-        "/history - 查看報告歷史\n"
-        "/report - 取得特定報告\n\n"
-        "⏱️ 排程管理\n"
-        "/schedule - 查看/設定排程\n\n"
-        "🌐 平台管理\n"
-        "/platforms - 查看平台清單\n"
-        "/add_platform - 新增平台\n"
-        "/remove_platform - 移除平台\n\n"
-        "❓ /help - 顯示完整說明\n\n"
-        "👉 先用 /subscribe 訂閱，即可自動收到報告！"
+        f"👋 嗨，{name}！歡迎使用 VoteFlux QA 競品分析機器人 🤖\n\n"
+        f"我會定期爬取 7 個預測市場平台資料，\n"
+        f"自動生成競品分析 HTML 報告並傳送給你。\n\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"📬 訂閱管理\n"
+        f"  /subscribe — 訂閱自動報告\n"
+        f"  /unsubscribe — 取消訂閱\n"
+        f"  /mystatus — 查看訂閱狀態\n\n"
+        f"🔧 手動執行\n"
+        f"  /run — 立即執行分析並取得報告\n"
+        f"  /history — 查看歷史報告\n\n"
+        f"⏱️ 排程設定\n"
+        f"  /schedule 09:00 — 每天09:00自動執行\n"
+        f"  /schedule 09:00 1-5 — 週一至週五09:00\n\n"
+        f"🌐 平台管理\n"
+        f"  /platforms — 查看分析平台清單\n\n"
+        f"❓ /help — 顯示完整指令說明\n"
+        f"━━━━━━━━━━━━━━━\n"
     )
 
-    logger.info(f"User {update.effective_user.id} started bot")
+    if already_subscribed:
+        welcome_message += "✅ 你已訂閱，報告將自動送達！"
+    else:
+        welcome_message += "👉 輸入 /subscribe 立即訂閱，自動收到分析報告！"
+
     await update.message.reply_text(welcome_message)
+
+
+async def unknown_message_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """
+    Handle any non-command message.
+
+    If user is new (not subscribed), show a brief welcome hint.
+    If user is subscribed, show a command reminder.
+    """
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    text = update.message.text or ""
+
+    # Ignore empty or very long messages
+    if not text or len(text) > 500:
+        return
+
+    logger.info(f"User {user.id} sent non-command message")
+
+    subscriber_store = get_subscriber_store(context)
+    is_subscribed = subscriber_store and subscriber_store.is_subscribed(chat_id)
+
+    if is_subscribed:
+        await update.message.reply_text(
+            "💡 需要什麼幫助嗎？試試這些指令：\n\n"
+            "  /run — 立即執行分析\n"
+            "  /schedule — 查看/設定排程\n"
+            "  /history — 查看歷史報告\n"
+            "  /help — 完整指令說明"
+        )
+    else:
+        name = user.first_name or "朋友"
+        await update.message.reply_text(
+            f"👋 嗨 {name}！我是 VoteFlux QA 競品分析機器人。\n\n"
+            f"輸入 /subscribe 訂閱後，我會自動把競品分析報告傳給你！\n\n"
+            f"或輸入 /start 查看完整功能介紹。"
+        )
 
 
 async def run_handler(

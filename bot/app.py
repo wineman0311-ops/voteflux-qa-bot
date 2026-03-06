@@ -7,7 +7,7 @@ Initializes the python-telegram-bot Application with all command handlers.
 import logging
 from typing import Optional
 
-from telegram.ext import Application, CommandHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from bot.handlers import (
     start_handler,
@@ -23,6 +23,7 @@ from bot.handlers import (
     subscribe_handler,
     unsubscribe_handler,
     mystatus_handler,
+    unknown_message_handler,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ def create_bot(token: str) -> Application:
     """
     Create and configure the Telegram bot Application.
 
-    Registers all command handlers and returns a configured Application instance.
+    Registers all command handlers and a catch-all message handler.
 
     Args:
         token: Telegram Bot API token
@@ -49,7 +50,6 @@ def create_bot(token: str) -> Application:
     # Create Application with token
     app = Application.builder().token(token).build()
 
-    # Register command handlers
     logger.info("Registering command handlers")
 
     # Subscription commands
@@ -71,5 +71,11 @@ def create_bot(token: str) -> Application:
     app.add_handler(CommandHandler("add_platform", add_platform_handler))
     app.add_handler(CommandHandler("remove_platform", remove_platform_handler))
 
-    logger.info("Bot application created successfully with 13 handlers")
+    # Catch-all: handle plain text messages (non-commands)
+    # Must be added LAST so command handlers take priority
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_message_handler)
+    )
+
+    logger.info("Bot application created successfully with 14 handlers")
     return app

@@ -11,6 +11,8 @@ import signal
 import sys
 from typing import Optional
 
+from telegram import BotCommand
+
 from config import settings
 from bot.app import create_bot
 from scheduler.scheduler import TaskScheduler
@@ -103,6 +105,10 @@ class BotManager:
                 await self.app.start()
                 logger.info("Bot started")
 
+                # Set Telegram command menu (shows in chat UI)
+                await self._set_bot_commands()
+                logger.info("Bot commands menu set")
+
                 # Start polling
                 logger.info("Starting polling...")
                 await self.app.updater.start_polling(
@@ -168,6 +174,34 @@ class BotManager:
 
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
+
+    async def _set_bot_commands(self) -> None:
+        """
+        Set Telegram bot command menu.
+
+        This registers the command list in Telegram so users see
+        available commands when they tap the '/' button in chat.
+        """
+        commands = [
+            BotCommand("start",          "🤖 開始使用 / 查看介紹"),
+            BotCommand("subscribe",      "📬 訂閱自動分析報告"),
+            BotCommand("unsubscribe",    "🔕 取消訂閱"),
+            BotCommand("mystatus",       "🔍 查看我的訂閱狀態"),
+            BotCommand("run",            "▶️ 立即執行競品分析"),
+            BotCommand("status",         "📊 查看機器人狀態"),
+            BotCommand("history",        "📜 查看歷史報告"),
+            BotCommand("report",         "📄 取得指定版本報告"),
+            BotCommand("schedule",       "⏱️ 查看/設定定時排程"),
+            BotCommand("platforms",      "🌐 查看分析平台清單"),
+            BotCommand("add_platform",   "➕ 新增分析平台"),
+            BotCommand("remove_platform","➖ 移除分析平台"),
+            BotCommand("help",           "❓ 顯示完整指令說明"),
+        ]
+        try:
+            await self.app.bot.set_my_commands(commands)
+            logger.info(f"Set {len(commands)} bot commands in Telegram menu")
+        except Exception as e:
+            logger.warning(f"Failed to set bot commands: {e}")
 
     async def _polling_error_handler(self, update, context) -> None:
         """Handle polling errors."""
